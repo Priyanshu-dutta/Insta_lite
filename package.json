@@ -1,0 +1,24 @@
+{
+  "name": "insta_lite",
+  "version": "1.0.0",
+  "description": "InstaLite backend application",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "seed": "prisma db seed"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "dotenv": "^16.4.5",
+    "express": "^5.3.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@prisma/prisma7": "^7.10.1",
+    "prisma": "^7.10.1"
+  }
+}
