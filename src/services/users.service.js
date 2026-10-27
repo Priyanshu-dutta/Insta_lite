@@ -26,7 +26,15 @@ async function listUsers({ skip, take, where, orderBy }) {
 
 async function getUserById(id) {
   return await prisma.user.findUnique({
-    where: { id }
+    where: { id },
+    include: {
+      _count: {
+        select: {
+          posts: true,
+          likes: true
+        }
+      }
+    }
   });
 }
 
@@ -48,10 +56,67 @@ async function deleteUser(id) {
   });
 }
 
+async function getUserPosts(authorId, { skip, take }) {
+  const where = { authorId };
+  const [data, total] = await prisma.$transaction([
+    prisma.post.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      include: {
+        _count: {
+          select: {
+            likes: true
+          }
+        }
+      }
+    }),
+    prisma.post.count({ where })
+  ]);
+  return { data, total };
+}
+
+async function getUserLikedPosts(userId, { skip, take }) {
+  const where = {
+    likes: {
+      some: {
+        userId
+      }
+    }
+  };
+  const [data, total] = await prisma.$transaction([
+    prisma.post.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            fullname: true
+          }
+        },
+        _count: {
+          select: {
+            likes: true
+          }
+        }
+      }
+    }),
+    prisma.post.count({ where })
+  ]);
+  return { data, total };
+}
+
 module.exports = {
   createUser,
   listUsers,
   getUserById,
   updateUser,
-  deleteUser
+  deleteUser,
+  getUserPosts,
+  getUserLikedPosts
 };

@@ -1,43 +1,44 @@
 const postsService = require("../services/posts.service");
+const { parsePagination, buildMeta } = require("../utils/pagination");
 
 async function create(req, res) {
-  const { imageUrl, caption, location } = req.body;
-  if (!imageUrl) {
-    return res.status(400).json({ error: "imageUrl is required" });
+  const { imageUrl, authorId, caption, location } = req.body;
+  if (!imageUrl || authorId === undefined || authorId === null || authorId === "") {
+    return res.status(400).json({ error: "imageUrl and authorId are required" });
+  }
+
+  const parsedAuthorId = parseInt(authorId, 10);
+  if (isNaN(parsedAuthorId)) {
+    return res.status(404).json({ error: "User not found" });
   }
 
   try {
-    const post = await postsService.createPost({ imageUrl, caption, location });
+    const post = await postsService.createPost({
+      imageUrl,
+      authorId: parsedAuthorId,
+      caption,
+      location
+    });
     return res.status(201).json(post);
   } catch (err) {
+    if (err.code === "P2003") {
+      return res.status(404).json({ error: "User not found" });
+    }
     return res.status(500).json({ error: "Internal server error" });
   }
 }
 
 async function list(req, res) {
-  const { page: rawPage, limit: rawLimit, sortBy = "createdAt", order = "desc", location, search, from, to } = req.query;
-
-  if (rawPage !== undefined) {
-    if (!/^\d+$/.test(String(rawPage).trim()) || parseInt(rawPage, 10) <= 0) {
-      return res.status(400).json({ error: "page and limit must be positive integers" });
-    }
+  const pagination = parsePagination(req.query);
+  if (pagination.error) {
+    return res.status(400).json({ error: pagination.error });
   }
 
-  if (rawLimit !== undefined) {
-    if (!/^\d+$/.test(String(rawLimit).trim()) || parseInt(rawLimit, 10) <= 0) {
-      return res.status(400).json({ error: "page and limit must be positive integers" });
-    }
-  }
+  const { sortBy = "createdAt", order = "desc", location, search, from, to } = req.query;
 
-  const page = rawPage !== undefined ? parseInt(rawPage, 10) : 1;
-  let limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 10;
-  if (limit > 50) {
-    limit = 50;
-  }
-
-  const allowedSort = ["createdAt", "updatedAt"];
+  const allowedSort = ["createdAt", "updatedAt", "likes"];
   if (!allowedSort.includes(sortBy)) {
-    return res.status(400).json({ error: "sortBy must be one of: createdAt, updatedAt" });
+    return res.status(400).json({ error: "sortBy must be one of: createdAt, updatedAt, likes" });
   }
 
   if (order !== "asc" && order !== "desc") {
@@ -73,22 +74,22 @@ async function list(req, res) {
     where.createdAt = createdAtFilter;
   }
 
-  const skip = (page - 1) * limit;
-  const take = limit;
-  const orderBy = { [sortBy]: order };
+  const { skip, take, page, limit } = pagination;
+  let orderBy;
+  if (sortBy === "likes") {
+    orderBy = [
+      { likes: { _count: order } },
+      { createdAt: "desc" }
+    ];
+  } else {
+    orderBy = { [sortBy]: order };
+  }
 
   try {
     const { data, total } = await postsService.listPosts({ skip, take, where, orderBy });
-    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
-
     return res.status(200).json({
       data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
+      meta: buildMeta(page, limit, total)
     });
   } catch (err) {
     return res.status(500).json({ error: "Internal server error" });

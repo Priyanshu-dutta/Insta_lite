@@ -4,6 +4,7 @@ async function createPost(data) {
   return await prisma.post.create({
     data: {
       imageUrl: data.imageUrl,
+      authorId: data.authorId,
       ...(data.caption !== undefined ? { caption: data.caption } : {}),
       ...(data.location !== undefined ? { location: data.location } : {})
     }
@@ -16,7 +17,21 @@ async function listPosts({ skip, take, where, orderBy }) {
       where,
       orderBy,
       skip,
-      take
+      take,
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            fullname: true
+          }
+        },
+        _count: {
+          select: {
+            likes: true
+          }
+        }
+      }
     }),
     prisma.post.count({ where })
   ]);
@@ -25,7 +40,21 @@ async function listPosts({ skip, take, where, orderBy }) {
 
 async function getPostById(id) {
   return await prisma.post.findUnique({
-    where: { id }
+    where: { id },
+    include: {
+      author: {
+        select: {
+          id: true,
+          username: true,
+          fullname: true
+        }
+      },
+      _count: {
+        select: {
+          likes: true
+        }
+      }
+    }
   });
 }
 

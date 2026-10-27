@@ -1,4 +1,5 @@
 const usersService = require("../services/users.service");
+const { parsePagination, buildMeta } = require("../utils/pagination");
 
 async function create(req, res) {
   const { username, email, fullname, bio } = req.body;
@@ -18,25 +19,12 @@ async function create(req, res) {
 }
 
 async function list(req, res) {
-  const { page: rawPage, limit: rawLimit, sortBy = "createdAt", order = "desc", isPrivate, search } = req.query;
-
-  if (rawPage !== undefined) {
-    if (!/^\d+$/.test(String(rawPage).trim()) || parseInt(rawPage, 10) <= 0) {
-      return res.status(400).json({ error: "page and limit must be positive integers" });
-    }
+  const pagination = parsePagination(req.query);
+  if (pagination.error) {
+    return res.status(400).json({ error: pagination.error });
   }
 
-  if (rawLimit !== undefined) {
-    if (!/^\d+$/.test(String(rawLimit).trim()) || parseInt(rawLimit, 10) <= 0) {
-      return res.status(400).json({ error: "page and limit must be positive integers" });
-    }
-  }
-
-  const page = rawPage !== undefined ? parseInt(rawPage, 10) : 1;
-  let limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 10;
-  if (limit > 50) {
-    limit = 50;
-  }
+  const { sortBy = "createdAt", order = "desc", isPrivate, search, hasPosts } = req.query;
 
   const allowedSort = ["createdAt", "username", "fullname"];
   if (!allowedSort.includes(sortBy)) {
@@ -58,6 +46,16 @@ async function list(req, res) {
     }
   }
 
+  if (hasPosts !== undefined) {
+    if (hasPosts === "true") {
+      where.posts = { some: {} };
+    } else if (hasPosts === "false") {
+      where.posts = { none: {} };
+    } else {
+      return res.status(400).json({ error: "hasPosts must be true or false" });
+    }
+  }
+
   if (search) {
     where.OR = [
       { username: { contains: search, mode: "insensitive" } },
@@ -65,22 +63,14 @@ async function list(req, res) {
     ];
   }
 
-  const skip = (page - 1) * limit;
-  const take = limit;
+  const { skip, take, page, limit } = pagination;
   const orderBy = { [sortBy]: order };
 
   try {
     const { data, total } = await usersService.listUsers({ skip, take, where, orderBy });
-    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
-
     return res.status(200).json({
       data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
+      meta: buildMeta(page, limit, total)
     });
   } catch (err) {
     return res.status(500).json({ error: "Internal server error" });
@@ -139,10 +129,68 @@ async function remove(req, res) {
   }
 }
 
+async function getPosts(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const user = await usersService.getUserById(id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const pagination = parsePagination(req.query);
+  if (pagination.error) {
+    return res.status(400).json({ error: pagination.error });
+  }
+
+  const { skip, take, page, limit } = pagination;
+  try {
+    const { data, total } = await usersService.getUserPosts(id, { skip, take });
+    return res.status(200).json({
+      data,
+      meta: buildMeta(page, limit, total)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+async function getLikedPosts(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const user = await usersService.getUserById(id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const pagination = parsePagination(req.query);
+  if (pagination.error) {
+    return res.status(400).json({ error: pagination.error });
+  }
+
+  const { skip, take, page, limit } = pagination;
+  try {
+    const { data, total } = await usersService.getUserLikedPosts(id, { skip, take });
+    return res.status(200).json({
+      data,
+      meta: buildMeta(page, limit, total)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
 module.exports = {
   create,
   list,
   getOne,
   update,
-  remove
+  remove,
+  getPosts,
+  getLikedPosts
 };
