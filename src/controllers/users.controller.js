@@ -18,9 +18,70 @@ async function create(req, res) {
 }
 
 async function list(req, res) {
+  const { page: rawPage, limit: rawLimit, sortBy = "createdAt", order = "desc", isPrivate, search } = req.query;
+
+  if (rawPage !== undefined) {
+    if (!/^\d+$/.test(String(rawPage).trim()) || parseInt(rawPage, 10) <= 0) {
+      return res.status(400).json({ error: "page and limit must be positive integers" });
+    }
+  }
+
+  if (rawLimit !== undefined) {
+    if (!/^\d+$/.test(String(rawLimit).trim()) || parseInt(rawLimit, 10) <= 0) {
+      return res.status(400).json({ error: "page and limit must be positive integers" });
+    }
+  }
+
+  const page = rawPage !== undefined ? parseInt(rawPage, 10) : 1;
+  let limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 10;
+  if (limit > 50) {
+    limit = 50;
+  }
+
+  const allowedSort = ["createdAt", "username", "fullname"];
+  if (!allowedSort.includes(sortBy)) {
+    return res.status(400).json({ error: "sortBy must be one of: createdAt, username, fullname" });
+  }
+
+  if (order !== "asc" && order !== "desc") {
+    return res.status(400).json({ error: "order must be asc or desc" });
+  }
+
+  const where = {};
+  if (isPrivate !== undefined) {
+    if (isPrivate === "true") {
+      where.isPrivate = true;
+    } else if (isPrivate === "false") {
+      where.isPrivate = false;
+    } else {
+      return res.status(400).json({ error: "isPrivate must be true or false" });
+    }
+  }
+
+  if (search) {
+    where.OR = [
+      { username: { contains: search, mode: "insensitive" } },
+      { fullname: { contains: search, mode: "insensitive" } }
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+  const take = limit;
+  const orderBy = { [sortBy]: order };
+
   try {
-    const users = await usersService.listUsers();
-    return res.status(200).json(users);
+    const { data, total } = await usersService.listUsers({ skip, take, where, orderBy });
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return res.status(200).json({
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages
+      }
+    });
   } catch (err) {
     return res.status(500).json({ error: "Internal server error" });
   }
