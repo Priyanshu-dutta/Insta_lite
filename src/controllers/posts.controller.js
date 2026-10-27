@@ -15,9 +15,81 @@ async function create(req, res) {
 }
 
 async function list(req, res) {
+  const { page: rawPage, limit: rawLimit, sortBy = "createdAt", order = "desc", location, search, from, to } = req.query;
+
+  if (rawPage !== undefined) {
+    if (!/^\d+$/.test(String(rawPage).trim()) || parseInt(rawPage, 10) <= 0) {
+      return res.status(400).json({ error: "page and limit must be positive integers" });
+    }
+  }
+
+  if (rawLimit !== undefined) {
+    if (!/^\d+$/.test(String(rawLimit).trim()) || parseInt(rawLimit, 10) <= 0) {
+      return res.status(400).json({ error: "page and limit must be positive integers" });
+    }
+  }
+
+  const page = rawPage !== undefined ? parseInt(rawPage, 10) : 1;
+  let limit = rawLimit !== undefined ? parseInt(rawLimit, 10) : 10;
+  if (limit > 50) {
+    limit = 50;
+  }
+
+  const allowedSort = ["createdAt", "updatedAt"];
+  if (!allowedSort.includes(sortBy)) {
+    return res.status(400).json({ error: "sortBy must be one of: createdAt, updatedAt" });
+  }
+
+  if (order !== "asc" && order !== "desc") {
+    return res.status(400).json({ error: "order must be asc or desc" });
+  }
+
+  const where = {};
+
+  if (location !== undefined) {
+    where.location = { equals: location, mode: "insensitive" };
+  }
+
+  if (search !== undefined) {
+    where.caption = { contains: search, mode: "insensitive" };
+  }
+
+  if (from !== undefined || to !== undefined) {
+    const createdAtFilter = {};
+    if (from !== undefined) {
+      const fromDate = new Date(from);
+      if (isNaN(fromDate.getTime())) {
+        return res.status(400).json({ error: "from and to must be valid dates" });
+      }
+      createdAtFilter.gte = fromDate;
+    }
+    if (to !== undefined) {
+      const toDate = new Date(to);
+      if (isNaN(toDate.getTime())) {
+        return res.status(400).json({ error: "from and to must be valid dates" });
+      }
+      createdAtFilter.lt = toDate;
+    }
+    where.createdAt = createdAtFilter;
+  }
+
+  const skip = (page - 1) * limit;
+  const take = limit;
+  const orderBy = { [sortBy]: order };
+
   try {
-    const posts = await postsService.listPosts();
-    return res.status(200).json(posts);
+    const { data, total } = await postsService.listPosts({ skip, take, where, orderBy });
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return res.status(200).json({
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages
+      }
+    });
   } catch (err) {
     return res.status(500).json({ error: "Internal server error" });
   }
